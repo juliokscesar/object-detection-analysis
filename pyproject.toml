@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 name = "object-detection-analysis"
 version = "0.0.1"
 dependencies = [
-    "numpy==2.0.1",
+    "numpy==1.24.4",
     "matplotlib",
     "scipy",
     "scikit-learn",
@@ -18,8 +18,8 @@ dependencies = [
     "torchvision",
     "torchaudio",
 
-    "scg-detection-tools@git+https://github.com/juliokscesar/scg-detection-tools@main",
-    "sam2@git+https://github.com/facebookresearch/segment-anything-2.git@main",
+    #"scg-detection-tools@git+https://github.com/juliokscesar/scg-detection-tools@main",
+    "sam-2@git+https://github.com/facebookresearch/segment-anything-2.git@main",
 ]
 requires-python = ">=3.8, <3.11"
 description = "Analysis taks involving object detection (counting, ploting, classifying colors, etc)"

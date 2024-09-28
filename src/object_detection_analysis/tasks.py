@@ -11,7 +11,7 @@ import cv2
 from scg_detection_tools.utils.file_handling import get_annotation_files
 from scg_detection_tools.dataset import read_dataset_annotation
 import scg_detection_tools.utils.image_tools as imtools
-from classifiers import BaseClassifier, classifier_from_name
+from object_detection_analysis.classifiers import BaseClassifier, classifier_from_name
 
 class BaseAnalysisTask(ABC):
     def __init__(self):
@@ -191,6 +191,8 @@ class CountAnalysisTask(BaseAnalysisTask):
     def _count_per_cls(cls_detections):
         results = {"all": 0}
         for cls in cls_detections:
+            if cls == "all":
+                continue
             if cls not in results:
                 results[cls] = len(cls_detections[cls])
             else:
@@ -203,15 +205,17 @@ class ObjectClassificationTask(BaseAnalysisTask):
     def __init__(
             self, 
             clf: Union[BaseClassifier, str], 
+            clf_cls_colors: dict,
+            clf_cls_labels: List[str],
             clf_ckpt_path: str = None, 
-            clf_cls_colors: dict = None,
-            clf_cls_labels: List[str] = None,
             show_classifications=True,
             show_detections=False,
             plot_per_image=False,
             OBJ_STD_SIZE=(32,32),
         ):
         super().__init__()
+        self._require_detections = True
+        self._require_masks = True
         
         if isinstance(clf, str):
             clf = classifier_from_name(clf, ckpt_path=clf_ckpt_path)
@@ -235,13 +239,22 @@ class ObjectClassificationTask(BaseAnalysisTask):
             return None
 
         image_objects = self.extract_objects(self._ctx_detections, self._ctx_masks, OBJ_STD_SIZE=self._config["obj_std_size"])
-        clf_results = {img: {"total": 0} for img in image_objects}
+        clf_results = {}
+        for img in image_objects:
+            clf_results[img] = {}
+            for label in self._config["clf_cls_labels"]:
+                clf_results[img]["total"] = 0 
+                clf_results[img][label] = 0
+
+        # Prepare color patches for legend when showing results
+        if self._config["show_classifications"]:
+            color_patches = [
+                mpatches.Patch(color=self._config["clf_cls_colors"][c], label=c) for c in self._config["clf_cls_labels"]
+            ]
+
         for img, obj_data in image_objects.items():
             pred_cls = self._clf.predict([obj[2] for obj in obj_data])
-            if self._config["clf_cls_labels"] is not None:
-                obj_label = [self._config["clf_cls_labels"][pred] for pred in pred_cls]
-            else:
-                obj_label = [str(c) for c in pred_cls]
+            obj_label = [self._config["clf_cls_labels"][pred] for pred in pred_cls]
             clf_results[img]["total"] = len(obj_label)
             for cls in set(obj_label):
                 clf_results[img][cls] = obj_label.count(cls)
@@ -255,7 +268,7 @@ class ObjectClassificationTask(BaseAnalysisTask):
             orig_img = cv2.imread(img)
             orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
             if self._config["show_detections"]:
-                axs[0].imshow(cv2.cvtColor(imtools.box_annotated_image(img, self._ctx_detections[img]["all"], box_thickness=2), cv2.COLOR_BGR2RGB))
+                axs[0].imshow(cv2.cvtColor(imtools.box_annotated_image(img, boxes=self._ctx_detections[img]["all"], box_thickness=2), cv2.COLOR_BGR2RGB))
             else:
                 axs[0].imshow(orig_img)
             
@@ -264,16 +277,13 @@ class ObjectClassificationTask(BaseAnalysisTask):
                 label = obj_label[idx]
                 _, mask, _ = obj_data[idx]
                 color = []
-                if self._config["clf_cls_colors"] is None:
-                    color = np.random.randint(low=0, high=255, size=3)
+                if isinstance(self._config["clf_cls_colors"][label], str):
+                    color = mcolors.to_rgb(self._config["clf_cls_colors"][label])
                 else:
-                    if isinstance(self._config["clf_cls_colors"][label], str):
-                        color = mcolors.to_rgb(self._config["clf_cls_colors"][label])
-                    else:
-                        color = self._config["clf_cls_colors"][label]
+                    color = self._config["clf_cls_colors"][label]
                 ann_img = imtools.segment_annotated_image(ann_img, mask, color, alpha=0.6)
-            axs[1].imshow(orig_img)
-            # TODO: axs[1].legend()
+            axs[1].imshow(ann_img)
+            axs[1].legend(handles=color_patches)
             plt.show()
 
         if self._config["plot_per_image"]:
@@ -298,20 +308,18 @@ class ObjectClassificationTask(BaseAnalysisTask):
     @staticmethod
     def extract_objects(ctx_detections: dict, ctx_masks: dict, OBJ_STD_SIZE=(32,32)):
         image_objects = {}
-        for (img, cls_detections) in ctx_detections.items():
+        for img in ctx_detections:
             image_objects[img] = []
-            boxes = cls_detections["all"]
+            boxes = ctx_detections[img]["all"]
             masks = ctx_masks[img]["all"]
             orig_img = cv2.imread(img)
             orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
-
             for box, mask in zip(boxes, masks):
                 h, w = mask.shape[1:]
-                mask = mask.astype(np.uint8).reshape(h,w,)
-                #mask = np.where(mask == 1, 255, 0)
-                mask = mask * 255
-                orig_img[mask[:,:] < 255] = 0
-                obj_crop = imtools.crop_box_image(orig_img, box)
+                mask = mask.astype(np.uint8).reshape(h,w,) * 255
+                masked = orig_img.copy()
+                masked[mask[:,:] < 255] = 0
+                obj_crop = imtools.crop_box_image(masked, box)
                 obj_crop = cv2.resize(obj_crop, OBJ_STD_SIZE, cv2.INTER_CUBIC)
                 image_objects[img].append([box, mask, obj_crop])
-        return image_objects                
+        return image_objects

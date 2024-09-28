@@ -15,7 +15,6 @@ import numpy as np
 from copy import deepcopy
 import logging
 
-
 from scg_detection_tools.utils.file_handling import file_exists
 
 class BaseClassifier(ABC):
