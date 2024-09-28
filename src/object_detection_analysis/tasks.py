@@ -11,7 +11,7 @@ import cv2
 from scg_detection_tools.utils.file_handling import get_annotation_files
 from scg_detection_tools.dataset import read_dataset_annotation
 import scg_detection_tools.utils.image_tools as imtools
-from classifers import BaseClassifier, classifier_from_name
+from classifiers import BaseClassifier, classifier_from_name
 
 class BaseAnalysisTask(ABC):
     def __init__(self):
