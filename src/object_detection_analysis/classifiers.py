@@ -36,7 +36,6 @@ class BaseClassifier(ABC):
             obj = dill.load(f)
         return obj
 
-    
     def save_state(self, file_name: str):
         with open(file_name, "wb") as f:
             dill.dump(self, f)
