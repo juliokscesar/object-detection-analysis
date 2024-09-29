@@ -148,7 +148,13 @@ class DetectionAnalysisContext:
                 self._ctx_masks[img]["all"].extend(cls_masks.tolist())
             self._ctx_masks[img]["all"] = np.array(self._ctx_masks[img]["all"])
         torch.cuda.empty_cache()
-            
+
+    def task_result(self, task_name):
+        if task_name not in self._tasks_results:
+            logging.error(f"No results for task {task_name!r}")
+            return None
+        return self._tasks_results[task_name]
+
     def show_detections(self, only_imgs: Union[List[int], List[str], None] = None):
         if only_imgs is None:
             only_imgs = self.images
