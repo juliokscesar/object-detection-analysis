@@ -1,4 +1,5 @@
 from typing import Union, List, Tuple
+from dataclasses import dataclass
 import logging
 import numpy as np
 import torch
@@ -11,6 +12,7 @@ from scg_detection_tools.segment import SAM2Segment
 from scg_detection_tools.utils.file_handling import read_yaml, file_exists
 import scg_detection_tools.utils.image_tools as imtools
 
+from object_detection_analysis.ctx_data import ContextDetectionBoxData, ContextDetectionMaskData
 from object_detection_analysis.tasks import BaseAnalysisTask
 
 DEFAULT_ANALYSIS_CONFIG = {
@@ -30,6 +32,7 @@ DEFAULT_ANALYSIS_CONFIG = {
     "sam2_path": "sam2_hiera_tiny.pt",
     "sam2_cfg": "sam2_hiera_t.yaml",
 }
+
 
 class DetectionAnalysisContext:
     """
@@ -60,10 +63,16 @@ class DetectionAnalysisContext:
         self._ctx_detections = {}
         self._ctx_masks = {}
         for img in imgs:
-            self._ctx_detections[img] = {cls: [] for cls in config["data_classes"]}
-            self._ctx_detections[img]["all"] = []
-            self._ctx_masks[img] = {cls: [] for cls in config["data_classes"]}
-            self._ctx_masks[img]["all"] = []
+            self._ctx_detections[img] = ContextDetectionBoxData(
+                object_classes=self._config["data_classes"],
+                all_boxes=[],
+                class_boxes={cls: [] for cls in self._config["data_classes"]},
+            )
+            self._ctx_masks[img] = ContextDetectionMaskData(
+                object_classes=self._config["data_classes"],
+                all_masks=[],
+                class_masks={cls: [] for cls in self._config["data_classes"]},
+            )
         
         self._tasks = tasks
         self._tasks_results = {name: None for (name,_) in tasks}
@@ -126,8 +135,8 @@ class DetectionAnalysisContext:
                     logging.warning(f"DetectionAnalysisContext._run_detections: class id '{cls_id}' in detections from image {img} not in context data classes. Skipping...")
                     continue
                 cls_label = self._config["data_classes"][cls_id]
-                self._ctx_detections[img][cls_label].append(box)
-                self._ctx_detections[img]["all"].append(box)
+                self._ctx_detections[img].class_boxes[cls_label].append(box)
+                self._ctx_detections[img].all_boxes.append(box)
             logging.info(f"Finished registering detections from image {img}. Total detections: {len(detection.xyxy)}")
         logging.info("Finished running detections")
         torch.cuda.empty_cache()
@@ -140,13 +149,11 @@ class DetectionAnalysisContext:
             logging.warning(f"No detections in context for images {', '.join([f'{img!r}' for img in no_detections])}")
 
         for img, cls_detections in self._ctx_detections.items():
-            for cls in cls_detections.keys():
-                if cls == "all":
-                    continue
-                cls_masks = self._segmentor.segment_boxes(img, boxes=cls_detections[cls])
-                self._ctx_masks[img][cls] = cls_masks
-                self._ctx_masks[img]["all"].extend(cls_masks.tolist())
-            self._ctx_masks[img]["all"] = np.array(self._ctx_masks[img]["all"])
+            for cls in cls_detections.class_boxes:
+                cls_masks = self._segmentor.segment_boxes(img, boxes=cls_detections.class_boxes[cls])
+                self._ctx_masks[img].class_masks[cls] = cls_masks
+                self._ctx_masks[img].all_masks.extend(cls_masks.tolist())
+            self._ctx_masks[img].all_masks = np.array(self._ctx_masks[img].all_masks)
         torch.cuda.empty_cache()
 
     def task_result(self, task_name):
@@ -168,4 +175,4 @@ class DetectionAnalysisContext:
             if img not in self._ctx_detections:
                 imtools.plot_image(cv2.imread(img))
                 continue
-            imtools.plot_image_detection(img, boxes=self._ctx_detections[img]["all"])
+            imtools.plot_image_detection(img, boxes=self._ctx_detections[img].all_boxes)

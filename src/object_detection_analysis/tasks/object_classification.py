@@ -8,10 +8,15 @@ import matplotlib.patches as mpatches
 
 import scg_detection_tools.utils.image_tools as imtools
 
+from object_detection_analysis.ctx_data import ContextDetectionBoxData, ContextDetectionMaskData
 from object_detection_analysis.tasks import BaseAnalysisTask
 from object_detection_analysis.classifiers import BaseClassifier, classifier_from_name
 
 class ObjectClassificationTask(BaseAnalysisTask):
+    """
+    Classification of detected objects using one of the classifiers (object_detection_analysis.classifiers)
+    The classificator must be a classification model pre-trained with the desired classes.
+    """
     def __init__(
             self, 
             clf: Union[BaseClassifier, str], 
@@ -23,6 +28,7 @@ class ObjectClassificationTask(BaseAnalysisTask):
             plot_per_image=False,
             OBJ_STD_SIZE=(32,32),
         ):
+        """Initialize object classification task"""
         super().__init__()
         self._require_detections = True
         self._require_masks = True
@@ -78,7 +84,7 @@ class ObjectClassificationTask(BaseAnalysisTask):
             orig_img = cv2.imread(img)
             orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
             if self._config["show_detections"]:
-                axs[0].imshow(cv2.cvtColor(imtools.box_annotated_image(img, boxes=self._ctx_detections[img]["all"], box_thickness=2), cv2.COLOR_BGR2RGB))
+                axs[0].imshow(cv2.cvtColor(imtools.box_annotated_image(img, boxes=self._ctx_detections[img].all_boxes, box_thickness=2), cv2.COLOR_BGR2RGB))
             else:
                 axs[0].imshow(orig_img)
             
@@ -116,12 +122,12 @@ class ObjectClassificationTask(BaseAnalysisTask):
         return clf_results
 
     @staticmethod
-    def extract_objects(ctx_detections: dict, ctx_masks: dict, OBJ_STD_SIZE=(32,32)):
+    def extract_objects(ctx_detections: dict[str, ContextDetectionBoxData], ctx_masks: dict[str, ContextDetectionMaskData], OBJ_STD_SIZE=(32,32)):
         image_objects = {}
         for img in ctx_detections:
             image_objects[img] = []
-            boxes = ctx_detections[img]["all"]
-            masks = ctx_masks[img]["all"]
+            boxes = ctx_detections[img].all_boxes
+            masks = ctx_masks[img].all_masks
             orig_img = cv2.imread(img)
             orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
             for box, mask in zip(boxes, masks):

@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 
 from object_detection_analysis.tasks import BaseAnalysisTask
+from object_detection_analysis.ctx_data import ContextDetectionBoxData
 
 class CountAnalysisTask(BaseAnalysisTask):
     def __init__(self, export_csv=False, plot_all=True, plot_per_class=True, save_plots=False):
@@ -63,14 +64,11 @@ class CountAnalysisTask(BaseAnalysisTask):
         return result
 
     @staticmethod
-    def _count_per_cls(cls_detections):
-        results = {"all": 0}
-        for cls in cls_detections:
-            if cls == "all":
-                continue
+    def _count_per_cls(img_detections: ContextDetectionBoxData):
+        results = {"all": len(img_detections.all_boxes)}
+        for cls in img_detections.object_classes:
             if cls not in results:
-                results[cls] = len(cls_detections[cls])
+                results[cls] = len(img_detections.class_boxes[cls])
             else:
-                results[cls] += len(cls_detections[cls])
-            results["all"] += len(cls_detections[cls])
+                results[cls] += len(img_detections.class_boxes[cls])
         return results
