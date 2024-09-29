@@ -149,6 +149,9 @@ class DetectionAnalysisContext:
             logging.warning(f"No detections in context for images {', '.join([f'{img!r}' for img in no_detections])}")
 
         for img, cls_detections in self._ctx_detections.items():
+            if len(cls_detections.all_boxes) == 0:
+                logging.warning(f"Trying to segment boxes from image {img!r} but it has 0 detection boxes in context. Skipping...")
+                continue
             for cls in cls_detections.class_boxes:
                 cls_masks = self._segmentor.segment_boxes(img, boxes=cls_detections.class_boxes[cls])
                 self._ctx_masks[img].class_masks[cls] = cls_masks
