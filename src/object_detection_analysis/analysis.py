@@ -111,9 +111,13 @@ class DetectionAnalysisContext:
 
     def run(self):
         if self._detect:
+            # run detection and free memory by deleting variables
             self._run_detections()
+            self._detect = False
         if self._segment:
+            # run segmentation and free mmemory by deleting variables
             self._run_segmentations()
+            self._segment = False
         for name, task in self._tasks:
             logging.info(f"Starting task {name}")
             task.set_ctx(

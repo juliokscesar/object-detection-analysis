@@ -7,7 +7,7 @@ detection_parameters:
   confidence: 50.0
   overlap: 50.0
   slice_detect: True
-  slice_wh: [480,480]
+  slice_wh: [640,640]
   slice_overlap_ratio: [0.3,0.3]
   slice_iou_threshold: 0.2
   slice_fill: False
