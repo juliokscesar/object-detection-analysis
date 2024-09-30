@@ -50,7 +50,7 @@ class KNNClassifier(BaseClassifier):
             self._clf = Pipeline(
                 steps=[
                     ("scaler", StandardScaler()),
-                    ("nca", NeighborhoodComponentsAnalysis(random_state=42)),
+                    ("nca", NeighborhoodComponentsAnalysis(n_components=256, random_state=42)),
                     ("knn", KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights)),
                 ]
             )
