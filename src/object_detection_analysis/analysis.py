@@ -1,14 +1,11 @@
 from typing import Union, List, Tuple
-from dataclasses import dataclass
 import logging
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
 import cv2
 
 from scg_detection_tools.models import BaseDetectionModel, get_opt_device, from_type
 from scg_detection_tools.detect import Detector
-from scg_detection_tools.segment import SAM2Segment
 from scg_detection_tools.utils.file_handling import read_yaml, file_exists
 import scg_detection_tools.utils.image_tools as imtools
 
@@ -55,7 +52,9 @@ class DetectionAnalysisContext:
         if det_model is None:
             det_model = from_type(config["model_type"], config["model_path"], config["data_classes"])
         self._detector = Detector(det_model, detection_params=config["detection_parameters"])
-        self._segmentor = SAM2Segment(config["sam2_path"], config["sam2_cfg"])
+        # self._segmentor = SAM2Segment(config["sam2_path"], config["sam2_cfg"])
+        self._segmentor = None
+
         self._ctx_device = get_opt_device()
 
         # Initialize context data
@@ -146,7 +145,16 @@ class DetectionAnalysisContext:
         torch.cuda.empty_cache()
 
     def _run_segmentations(self):
+        # It is necessary to keep this import here in order to make YOLO-NAS work with SAM2
+        # because importing both together conflicts the initialization of Hydra module
+        # which both depend on.
+        from scg_detection_tools.segment import SAM2Segment
+
         logging.info("Started running segmentation using detections from context images")
+
+        if self._segmentor is None:
+            self._segmentor = SAM2Segment(sam2_ckpt_path=self._config["sam2_path"], sam2_cfg=self._config["sam2_cfg"])
+
         # Check for any image with no detections in context data
         no_detections = list(set(self._ctx_imgs).difference(self._ctx_detections.keys()))
         if len(no_detections) > 0:
