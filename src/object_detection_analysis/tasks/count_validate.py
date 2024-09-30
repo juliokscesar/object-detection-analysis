@@ -6,6 +6,8 @@ from scg_detection_tools.utils.file_handling import get_annotation_files
 
 from object_detection_analysis.tasks import BaseAnalysisTask, CountAnalysisTask
 
+# TODO: Get dataset path as input and output training, validate and test metrics
+# -> also have options to choose modes
 class CountValidateModelTask(BaseAnalysisTask):
     def __init__(self, annotations_path: str, export_csv = False):
         super().__init__()
