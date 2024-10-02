@@ -7,6 +7,7 @@ import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
 
 import scg_detection_tools.utils.image_tools as imtools
+import scg_detection_tools.utils.cvt as cvt
 
 from object_detection_analysis.ctx_data import ContextDetectionBoxData, ContextDetectionMaskData
 from object_detection_analysis.tasks import BaseAnalysisTask
@@ -32,7 +33,7 @@ class ObjectClassificationTask(BaseAnalysisTask):
         """Initialize object classification task"""
         super().__init__()
         self._require_detections = True
-        self._require_masks = True
+        self._require_masks = not use_boxes
         
         if isinstance(clf, str):
             clf = classifier_from_name(clf, ckpt_path=clf_ckpt_path)
@@ -57,6 +58,7 @@ class ObjectClassificationTask(BaseAnalysisTask):
             return None
         if not (self._config["use_boxes"]) and (self._ctx_masks is None):
             logging.fatal("Object classification with 'use_boxes' disabled requires context masks to be set.")
+            return None
 
         image_objects = self.extract_objects(self._ctx_detections, self._ctx_masks, use_boxes=self._config["use_boxes"], OBJ_STD_SIZE=self._config["obj_std_size"])
         clf_results = {}
@@ -104,7 +106,8 @@ class ObjectClassificationTask(BaseAnalysisTask):
                 if mask is not None:
                     ann_img = imtools.segment_annotated_image(ann_img, mask, color, alpha=0.6)
                 else:
-                    ann_img = imtools.box_annotated_image(ann_img, [box])
+                    box_mask = cvt.boxes_to_masks([box], imgsz=orig_img.shape[:2])
+                    ann_img = imtools.segment_annotated_image(ann_img, box_mask, color, alpha=0.6)
             axs[1].imshow(ann_img)
             axs[1].legend(handles=color_patches)
             plt.show()
