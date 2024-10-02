@@ -3,6 +3,8 @@ import logging
 import numpy as np
 import torch
 import cv2
+import os
+import matplotlib.pyplot as plt
 
 from scg_detection_tools.models import BaseDetectionModel, get_opt_device, from_type
 from scg_detection_tools.detect import Detector
@@ -191,3 +193,44 @@ class DetectionAnalysisContext:
                 imtools.plot_image(cv2.imread(img))
                 continue
             imtools.plot_image_detection(img, boxes=self._ctx_detections[img].all_boxes)
+
+    def show_masks(self, only_imgs: Union[List[int], List[str], None] = None):
+        if only_imgs is None:
+            only_imgs = self.images
+        elif isinstance(only_imgs[0], int):
+            only_imgs = [self.images[i] for i in only_imgs]
+        elif not isinstance(only_imgs[0], str):        
+            logging.error("Argument 'only_imgs' must be either None, a list of images indices (List[int]) or a list of images paths (List[str])")
+            return
+
+        for img in only_imgs:
+            if img not in self._ctx_masks:
+                logging.warning(f"No masks in context for image {img}")
+                continue
+            masked = cv2.imread(img)
+            masked = cv2.cvtColor(masked, cv2.COLOR_BGR2RGB)
+            for mask in self._ctx_masks[img].all_masks:
+                masked = imtools.segment_annotated_image(masked, mask, color=[30, 6, 255], alpha=0.6)
+            plt.axis("off")
+            plt.imshow(masked)
+            plt.show()
+
+
+    def export_detections(self, only_imgs: Union[List[int], List[str], None] =  None, exp_dir="exp_analysis"):
+        if only_imgs is None:
+            only_imgs = self.images
+        elif isinstance(only_imgs[0], int):
+            only_imgs = [self.images[i] for i in only_imgs]
+        elif not isinstance(only_imgs[0], str):
+            logging.error("Argument 'only_imgs' must be either None, a list of images indices (List[int]) or a list of images paths (List[str])")
+            return
+
+        if not os.path.isdir(exp_dir):
+            os.makedirs(exp_dir, exist_ok=True)
+
+        for img in only_imgs:
+            if img not in self._ctx_detections:
+                logging.warning(f"No detections found for image {img}")
+                continue
+            save_name = f"det_{os.path.basename(img)}"
+            imtools.save_image_detection(img, self._ctx_detections[img].all_boxes, save_name=save_name, save_dir=exp_dir)

@@ -23,6 +23,7 @@ class ObjectClassificationTask(BaseAnalysisTask):
             clf_cls_colors: dict,
             clf_cls_labels: List[str],
             clf_ckpt_path: str = None, 
+            use_boxes: bool = False,
             show_classifications=True,
             show_detections=False,
             plot_per_image=False,
@@ -44,17 +45,20 @@ class ObjectClassificationTask(BaseAnalysisTask):
             "clf_cls_colors": clf_cls_colors,
             "clf_cls_labels": clf_cls_labels,
             "show_classifications": show_classifications,
+            "use_boxes": use_boxes,
             "show_detections": show_detections, 
             "plot_per_image": plot_per_image,
             "obj_std_size": OBJ_STD_SIZE,
         }
 
     def run(self):
-        if (self._ctx_imgs is None) or (self._ctx_detections is None) or (self._ctx_masks is None):
-            logging.fatal("ObjectClassificationTask requires context images, detections and masks but one of them is None.")
+        if (self._ctx_imgs is None) or (self._ctx_detections is None):
+            logging.fatal("ObjectClassificationTask requires context images and detections but one of them is None.")
             return None
+        if not (self._config["use_boxes"]) and (self._ctx_masks is None):
+            logging.fatal("Object classification with 'use_boxes' disabled requires context masks to be set.")
 
-        image_objects = self.extract_objects(self._ctx_detections, self._ctx_masks, OBJ_STD_SIZE=self._config["obj_std_size"])
+        image_objects = self.extract_objects(self._ctx_detections, self._ctx_masks, use_boxes=self._config["use_boxes"], OBJ_STD_SIZE=self._config["obj_std_size"])
         clf_results = {}
         for img in image_objects:
             clf_results[img] = {}
@@ -91,17 +95,21 @@ class ObjectClassificationTask(BaseAnalysisTask):
             ann_img = orig_img
             for idx in range(len(obj_label)):
                 label = obj_label[idx]
-                _, mask, _ = obj_data[idx]
+                box, mask, _ = obj_data[idx]
                 color = []
                 if isinstance(self._config["clf_cls_colors"][label], str):
                     color = mcolors.to_rgb(self._config["clf_cls_colors"][label])
                 else:
                     color = self._config["clf_cls_colors"][label]
-                ann_img = imtools.segment_annotated_image(ann_img, mask, color, alpha=0.6)
+                if mask is not None:
+                    ann_img = imtools.segment_annotated_image(ann_img, mask, color, alpha=0.6)
+                else:
+                    ann_img = imtools.box_annotated_image(ann_img, [box])
             axs[1].imshow(ann_img)
             axs[1].legend(handles=color_patches)
             plt.show()
 
+        # Plot each class count per image
         if self._config["plot_per_image"]:
             _, ax = plt.subplots(layout="tight")
             img_idx = np.arange(len(self._ctx_imgs))
@@ -122,20 +130,32 @@ class ObjectClassificationTask(BaseAnalysisTask):
         return clf_results
 
     @staticmethod
-    def extract_objects(ctx_detections: dict[str, ContextDetectionBoxData], ctx_masks: dict[str, ContextDetectionMaskData], OBJ_STD_SIZE=(32,32)):
+    def extract_objects(ctx_detections: dict[str, ContextDetectionBoxData], ctx_masks: dict[str, ContextDetectionMaskData] = None, use_boxes = False, OBJ_STD_SIZE=(32,32)):
+        if (not use_boxes) and (ctx_masks is None):
+            logging.fatal("Trying to extract objects with use_boxes disabled, but context masks is None")
+            return None
+
         image_objects = {}
         for img in ctx_detections:
             image_objects[img] = []
             boxes = ctx_detections[img].all_boxes
-            masks = ctx_masks[img].all_masks
             orig_img = cv2.imread(img)
             orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
-            for box, mask in zip(boxes, masks):
-                h, w = mask.shape[1:]
-                mask = mask.astype(np.uint8).reshape(h,w,) * 255
-                masked = orig_img.copy()
-                masked[mask[:,:] < 255] = 0
-                obj_crop = imtools.crop_box_image(masked, box)
-                obj_crop = cv2.resize(obj_crop, OBJ_STD_SIZE, cv2.INTER_CUBIC)
-                image_objects[img].append([box, mask, obj_crop])
+            if not use_boxes:
+                masks = ctx_masks[img].all_masks
+                for box, mask in zip(boxes, masks):
+                    h, w = mask.shape[1:]
+                    mask = mask.astype(np.uint8).reshape(h,w,) * 255
+                    masked = orig_img.copy()
+                    masked[mask[:,:] < 255] = 0
+                    obj_crop = imtools.crop_box_image(masked, box)
+                    obj_crop = cv2.resize(obj_crop, OBJ_STD_SIZE, cv2.INTER_CUBIC)
+                    image_objects[img].append([box, mask, obj_crop])
+            else:
+                for box in boxes:
+                    obj_crop = imtools.crop_box_image(orig_img, box)
+                    obj_crop = cv2.resize(obj_crop, OBJ_STD_SIZE, cv2.INTER_CUBIC)
+                    image_objects[img].append(
+                        [box, None, obj_crop]
+                    )
         return image_objects

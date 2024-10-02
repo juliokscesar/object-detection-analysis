@@ -51,6 +51,8 @@ class CountAnalysisTask(BaseAnalysisTask):
         if self._config["plot_per_class"]:
             fig_pcls, ax = plt.subplots(layout="tight")
             for cls in list(data.keys())[1:]:
+                if cls == "all":
+                    continue
                 ax.plot(data["img_idx"], data[cls], marker='o', label=cls)
             ax.legend()
             ax.set(xlabel="Image ID", ylabel="Object count")
