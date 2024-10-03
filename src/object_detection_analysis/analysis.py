@@ -42,6 +42,7 @@ class DetectionAnalysisContext:
             self, imgs: List[str], 
             det_model: BaseDetectionModel = None, 
             config: Union[str, dict] = DEFAULT_ANALYSIS_CONFIG,
+            image_specific_parameters: Union[dict[int,dict], dict[str,dict]] = None,
             tasks: Tuple[str, List[BaseAnalysisTask]] = None,
         ):
         # Read from yaml if string passed
@@ -50,10 +51,13 @@ class DetectionAnalysisContext:
         self._config = {
             key: config[key] if key in config else DEFAULT_ANALYSIS_CONFIG[key] for key in DEFAULT_ANALYSIS_CONFIG 
         }
-        
+        if image_specific_parameters is not None:
+            self._config["image_specific_parameters"] = image_specific_parameters
+            self._config["use_specific_parameters"] = True
+
         if det_model is None:
             det_model = from_type(config["model_type"], config["model_path"], config["data_classes"])
-        self._detector = Detector(det_model, detection_params=config["detection_parameters"])
+        self._detector = Detector(det_model, detection_params=config["detection_parameters"].copy())
         # self._segmentor = SAM2Segment(config["sam2_path"], config["sam2_cfg"])
         self._segmentor = None
 
@@ -133,8 +137,27 @@ class DetectionAnalysisContext:
 
     def _run_detections(self):
         logging.info("Started running detections with context images")
-        detections = self._detector(self.images)
-        for img, detection in zip(self.images, detections):
+        images = self.images.copy()
+        # Run any detections that uses specific parameters
+        print("STARTING DETECTIONS WITH PARAMETERS:", self._detector._det_params)
+        if self._config["use_specific_parameters"]:
+            for img in self._config["image_specific_parameters"]:
+                self._detector.update_parameters(**self._config["image_specific_parameters"][img])
+                print("USING SPECIFIC PARAMETERS FOR IMAGE", img, self._detector._det_params)
+                if isinstance(img, int):
+                    img = images[img]
+                detections = self._detector(img)[0]
+                for cls_id, box in zip(detections.class_id, detections.xyxy.astype(np.int32)):
+                    cls_label = self._config["data_classes"][cls_id]
+                    self._ctx_detections[img].class_boxes[cls_label].append(box)
+                    self._ctx_detections[img].all_boxes.append(box)
+                images.remove(img)
+            # reset detection parameters
+            self._detector.update_parameters(**self._config["detection_parameters"])
+        # Run rest of detections with common parameters
+        print("RUNNING WITH COMMON PARAMETERS FOR IMAGES", images, self._detector._det_params)
+        detections = self._detector(images)
+        for img, detection in zip(images, detections):
             for cls_id, box in zip(detection.class_id, detection.xyxy.astype(np.int32)):
                 if cls_id > len(self._config["data_classes"]):
                     logging.warning(f"DetectionAnalysisContext._run_detections: class id '{cls_id}' in detections from image {img} not in context data classes. Skipping...")
@@ -142,7 +165,6 @@ class DetectionAnalysisContext:
                 cls_label = self._config["data_classes"][cls_id]
                 self._ctx_detections[img].class_boxes[cls_label].append(box)
                 self._ctx_detections[img].all_boxes.append(box)
-            logging.info(f"Finished registering detections from image {img}. Total detections: {len(detection.xyxy)}")
         logging.info("Finished running detections")
         torch.cuda.empty_cache()
 
