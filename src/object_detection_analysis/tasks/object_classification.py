@@ -74,8 +74,14 @@ class ObjectClassificationTask(BaseAnalysisTask):
                 mpatches.Patch(color=self._config["clf_cls_colors"][c], label=c) for c in self._config["clf_cls_labels"]
             ]
 
+        PREDICTION_BATCH = 4
         for img, obj_data in image_objects.items():
-            pred_cls = self._clf.predict([obj[2] for obj in obj_data])
+            # Run predictions in batches
+            pred_cls = []
+            for i in range(0, len(obj_data), PREDICTION_BATCH):
+                obj_data_batch = [obj[2] for obj in obj_data[i:(i+PREDICTION_BATCH)]]
+                pred_cls.extend(self._clf.predict(obj_data_batch))
+
             obj_label = [self._config["clf_cls_labels"][pred] for pred in pred_cls]
             clf_results[img]["total"] = len(obj_label)
             for cls in set(obj_label):
