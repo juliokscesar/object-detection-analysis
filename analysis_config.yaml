@@ -1,10 +1,11 @@
-model_type: "yolov8"
-model_path: "/home/juliocesar/leaf-detection/runs/detect/train/weights/best.pt"
-# model_type: "yolonas"
-# model_path: "/home/juliocesar/leaf-detection/checkpoints/yolonas/large/train6/ckpt_best.pth"
+# model_type: "yolov8"
+# model_path: "/home/juliocesar/leaf-detection/runs/detect/train/weights/best.pt"
+model_type: "yolonas"
+model_path: "/home/juliocesar/leaf-detection/checkpoints/yolonas/large/train7/ckpt_latest.pth"
 data_classes: ["leaf"]
 sam2_path: "/home/juliocesar/leaf-detection/checkpoints/sam2/sam2_hiera_tiny.pt"
 sam2_cfg: "sam2_hiera_t.yaml"
+
 detection_parameters:
   confidence: 50.0
   overlap: 50.0
@@ -13,5 +14,10 @@ detection_parameters:
   slice_overlap_ratio: [0.3,0.3]
   slice_iou_threshold: 0.2
   slice_fill: False
-  box_filter: True
-  box_filter_thresh: 0.95
+
+  detection_filters:
+    duplicate_filter: True
+    duplicate_filter_thresh: 0.95
+
+    object_size_filter: True
+    object_size_max_wh: [80,80]

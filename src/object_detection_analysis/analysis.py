@@ -5,6 +5,7 @@ import torch
 import cv2
 import os
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 from scg_detection_tools.models import BaseDetectionModel, get_opt_device, from_type
 from scg_detection_tools.detect import Detector
@@ -24,6 +25,9 @@ DEFAULT_ANALYSIS_CONFIG = {
         "slice_iou_threshold": 0.2,
         "slice_fill": False,
     },
+
+    "use_specific_parameters": False,
+    "image_specific_parameters": None,
 
     "model_type": "yolov8",
     "model_path": "yolov10l.pt",
@@ -166,6 +170,7 @@ class DetectionAnalysisContext:
                 self._ctx_detections[img].class_boxes[cls_label].append(box)
                 self._ctx_detections[img].all_boxes.append(box)
         logging.info("Finished running detections")
+        self._ctx_detections = dict(sorted(self._ctx_detections.items(), key=lambda t: int(Path(t[0]).stem) if Path(t[0]).stem.isnumeric() else t[0]))
         torch.cuda.empty_cache()
 
     def _run_segmentations(self):
@@ -200,6 +205,14 @@ class DetectionAnalysisContext:
             logging.error(f"No results for task {task_name!r}")
             return None
         return self._tasks_results[task_name]
+
+    def task_sumary(self):
+        print("-"*30, "TASK SUMARRY OF LAST ANALYSIS", "-"*30, "\n")
+        for task in self._tasks_results:
+            print(f"RESULTS OF TASK {task}")
+            for img in self._tasks_results[task]:
+                print(os.path.basename(img), self._tasks_results[task][img])
+            print("_"*90, "\n")
 
     def show_detections(self, only_imgs: Union[List[int], List[str], None] = None):
         if only_imgs is None:
