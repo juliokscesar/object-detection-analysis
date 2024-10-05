@@ -24,6 +24,13 @@ DEFAULT_ANALYSIS_CONFIG = {
         "slice_overlap_ratio": (0.3, 0.3),
         "slice_iou_threshold": 0.2,
         "slice_fill": False,
+
+        "detection_filters": {
+            "duplicate_filter": True,
+            "duplicate_filter_thresh": 0.95,
+            "object_size_filter": True,
+            "object_size_max_wh": (80,80),
+        },
     },
 
     "use_specific_parameters": False,
