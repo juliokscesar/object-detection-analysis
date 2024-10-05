@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
+import torch
 
 import scg_detection_tools.utils.image_tools as imtools
 import scg_detection_tools.utils.cvt as cvt
@@ -36,7 +37,7 @@ class ObjectClassificationTask(BaseAnalysisTask):
         self._require_masks = not use_boxes
         
         if isinstance(clf, str):
-            clf = classifier_from_name(clf, ckpt_path=clf_ckpt_path)
+            clf = classifier_from_name(clf, ckpt_path=clf_ckpt_path, to_optimal_device=True)
         self._clf = clf
         if self._clf is None:
             logging.fatal("ObjectClassificationTask classifier is missing")
