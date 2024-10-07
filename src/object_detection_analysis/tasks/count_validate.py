@@ -32,10 +32,10 @@ class CountValidateModelTask(BaseAnalysisTask):
                 true_count.append(0)
             else:
                 ann = read_dataset_annotation(self._annotation_files[img], separate_class=False)
-                true_count.append(len(ann) - 1)
+                true_count.append(len(ann))
         true_count = np.array(true_count)
         pred_count = [
-            CountAnalysisTask._count_per_cls(self._ctx_detections[img])["all"] for img in self._ctx_detections
+            CountAnalysisTask._count_per_cls(self._ctx_detections[img])["all"] if img in self._ctx_detections else 0 for img in self._ctx_imgs
         ]
         pred_count = np.array(pred_count)
         result_errors = self.calculate_errors(true_count, pred_count)
@@ -54,7 +54,7 @@ class CountValidateModelTask(BaseAnalysisTask):
             logging.error(f"'true_count' (shape={true_count.shape}) and 'pred_count' (shape={pred_count.shape}) have different shapes. They must be the same in order to calculate the errors")
             return None
         
-        errors = true_count - pred_count
+        errors = pred_count - true_count
         relative = np.divide(
             errors.astype(np.float64),
             true_count.astype(np.float64),
@@ -64,11 +64,11 @@ class CountValidateModelTask(BaseAnalysisTask):
         mae = np.abs(errors).mean()
         mse = (errors**2).mean()
         rmse = np.sqrt(mse)
-        stderror = np.sqrt( ((errors - errors.mean())**2).mean() )
+        stderror = np.sqrt( ((errors - errors.mean())**2.0).mean() )
         rel_mae = np.absolute(relative).mean()
         rel_mse = (relative**2).mean()
         rel_rmse = np.sqrt(rel_mse)
-        rel_stderror = np.sqrt( ((relative - relative.mean())**2).mean() )
+        rel_stderror = np.sqrt( ((relative - relative.mean())**2.0).mean() )
         return {
             "mae": mae, "mse": mse, "rmse": rmse, "stderror": stderror,
             "relative_mae": rel_mae, "relative_mse": rel_mse, "relative_rmse": rel_rmse, "relative_stderror": rel_stderror,

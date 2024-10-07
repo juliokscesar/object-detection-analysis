@@ -25,6 +25,7 @@ class ObjectClassificationTask(BaseAnalysisTask):
             clf_cls_colors: dict,
             clf_cls_labels: List[str],
             clf_ckpt_path: str = None, 
+            clf_input_batch: int = 4,
             use_boxes: bool = False,
             show_classifications=True,
             show_detections=False,
@@ -46,6 +47,7 @@ class ObjectClassificationTask(BaseAnalysisTask):
         self._config = {
             "clf_cls_colors": clf_cls_colors,
             "clf_cls_labels": clf_cls_labels,
+            "clf_input_batch": clf_input_batch,
             "show_classifications": show_classifications,
             "use_boxes": use_boxes,
             "show_detections": show_detections, 
@@ -75,7 +77,7 @@ class ObjectClassificationTask(BaseAnalysisTask):
                 mpatches.Patch(color=self._config["clf_cls_colors"][c], label=c) for c in self._config["clf_cls_labels"]
             ]
 
-        PREDICTION_BATCH = 4
+        PREDICTION_BATCH = self._config["clf_input_batch"]
         for img, obj_data in image_objects.items():
             # Run predictions in batches
             pred_cls = []
@@ -111,10 +113,11 @@ class ObjectClassificationTask(BaseAnalysisTask):
                 else:
                     color = self._config["clf_cls_colors"][label]
                 if mask is not None:
-                    ann_img = imtools.segment_annotated_image(ann_img, mask, color, alpha=0.6)
+                    ann_img = imtools.apply_image_mask(ann_img, mask, color, alpha=0.6, bounding_box=box)
                 else:
-                    box_mask = cvt.boxes_to_masks([box], imgsz=orig_img.shape[:2])[0]
-                    ann_img = imtools.segment_annotated_image(ann_img, box_mask, color, alpha=0.6)
+                    box_mask = cvt.boxes_to_masks([box], imghw=orig_img.shape[:2], binary_mask=True)[0]
+                    box_mask = imtools.crop_box_image(box_mask, box)
+                    ann_img = imtools.apply_image_mask(ann_img, box_mask, color, alpha=0.6, bounding_box=box)
             axs[1].imshow(ann_img)
             axs[1].legend(handles=color_patches)
             plt.show()
@@ -154,16 +157,22 @@ class ObjectClassificationTask(BaseAnalysisTask):
             if not use_boxes:
                 masks = ctx_masks[img].all_masks
                 for box, mask in zip(boxes, masks):
-                    h, w = mask.shape[1:]
-                    mask = mask.astype(np.uint8).reshape(h,w,) * 255
-                    masked = orig_img.copy()
-                    masked[mask[:,:] < 1] = 0
-                    obj_crop = imtools.crop_box_image(masked, box)
-                    obj_crop = cv2.resize(obj_crop, OBJ_STD_SIZE, cv2.INTER_CUBIC)
-                    image_objects[img].append([box, mask, obj_crop])
+                    # h, w = mask.shape[1:]
+                    # mask = mask.astype(np.uint8).reshape(h,w,) * 255
+                    # masked = orig_img.copy()
+                    # masked[mask[:,:] < 1] = 0
+                    # obj_crop = imtools.crop_box_image(masked, box)
+                    # obj_crop = cv2.resize(obj_crop, OBJ_STD_SIZE, cv2.INTER_CUBIC)
+
+                    obj_crop = imtools.crop_box_image(orig_img, box)
+                    if obj_crop.shape[:2] != mask.shape[:2]:
+                        mask = cv2.resize(mask, obj_crop.shape[:2], interpolation=cv2.INTER_CUBIC)
+                    masked_obj = obj_crop * mask
+                    masked_obj = cv2.resize(masked_obj, OBJ_STD_SIZE, interpolation=cv2.INTER_CUBIC)
+                    image_objects[img].append([box, mask, masked_obj])
             else:
                 for box in boxes:
                     obj_crop = imtools.crop_box_image(orig_img, box)
-                    obj_crop = cv2.resize(obj_crop, OBJ_STD_SIZE, cv2.INTER_CUBIC)
+                    obj_crop = cv2.resize(obj_crop, OBJ_STD_SIZE, interpolation=cv2.INTER_CUBIC)
                     image_objects[img].append([box, None, obj_crop])
         return image_objects

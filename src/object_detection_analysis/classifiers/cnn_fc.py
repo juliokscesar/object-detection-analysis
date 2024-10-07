@@ -44,7 +44,7 @@ class CNNFCClassifier(nn.Module, BaseClassifier):
 
         return X
 
-    def fit(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray, epochs=20, batch=4):
+    def fit(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray, epochs=20, batch=4, save_best=True):
         if not isinstance(X_train, np.ndarray):
             X_train = np.array(X_train)
         if not isinstance(y_train, np.ndarray):
@@ -62,6 +62,7 @@ class CNNFCClassifier(nn.Module, BaseClassifier):
 
         hist_loss = []
         hist_acc = []
+        best_acc = 0.0
 
         for epoch in range(epochs):
             self.train()
@@ -78,6 +79,9 @@ class CNNFCClassifier(nn.Module, BaseClassifier):
 
             val_correct, val_acc = self._evaluate_model(X_val, y_val, batch=batch)
             hist_acc.append(val_acc)
+            if val_acc > best_acc:
+                self.save_state("cnn_best.pt")
+                best_acc = val_acc
 
             print(f"Epoch [{epoch+1}/{epochs}], Loss: {hist_loss[-1]:.4f}, Accuracy: {hist_acc[-1]:.2f}%")
         

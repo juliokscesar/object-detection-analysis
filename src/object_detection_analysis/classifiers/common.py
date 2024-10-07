@@ -29,7 +29,7 @@ def classifier_from_name(name: str, ckpt_path: str = None, to_optimal_device=Tru
     if ckpt_path is not None:
         clf_file = ckpt_path
     clf = clf_class.from_state(clf_file)
-    if (to_optimal_device) and (isinstance(clf, MLPClassifier) or isinstance(clf, CNNFCClassifier)):
+    if (to_optimal_device):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         clf.to(device)
     return clf

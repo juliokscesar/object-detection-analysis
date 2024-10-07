@@ -6,6 +6,7 @@ import cv2
 import os
 import matplotlib.pyplot as plt
 from pathlib import Path
+from copy import deepcopy
 
 from scg_detection_tools.models import BaseDetectionModel, get_opt_device, from_type
 from scg_detection_tools.detect import Detector
@@ -91,16 +92,19 @@ class DetectionAnalysisContext:
             )
         
         self._tasks = tasks
-        self._tasks_results = {name: None for (name,_) in tasks}
+        self._tasks_results = None
+        if self._tasks is not None:
+            self._tasks_results = {name: None for (name,_) in tasks}
         # decide if should run YOLO and/or SAM2 based on tasks requirements
         self._detect = self._segment = False
-        for _, task in tasks:
-            if task.require_detections:
-                self._detect = True
-            if task.require_masks:
-                self._segment = True
-            if self._detect and self._segment:
-                break
+        if tasks is not None:
+            for _, task in tasks:
+                if task.require_detections:
+                    self._detect = True
+                if task.require_masks:
+                    self._segment = True
+                if self._detect and self._segment:
+                    break
 
     @property 
     def images(self):
@@ -110,6 +114,17 @@ class DetectionAnalysisContext:
         if not file_exists(img):
             raise ValueError(f"File {img!r} does not exist.")
         self._ctx_imgs.append(img)
+
+    def change_configs(self, config: dict):
+        for key in config:
+            if key not in self._config:
+                raise ValueError(f"Key {key} not in Detection Analysis Context config.")
+            # Update detector if detection_parameters changed, and update config only changing the keys passed
+            if key == "detection_parameters":
+                self._detector.update_parameters(**config[key])
+                self._config["detection_parameters"] = self._detector._det_params.copy()
+            else:
+                self._config[key] = config[key]
 
     @property
     def tasks(self):
@@ -200,11 +215,69 @@ class DetectionAnalysisContext:
             if len(cls_detections.all_boxes) == 0:
                 logging.warning(f"Trying to segment boxes from image {img!r} but it has 0 detection boxes in context. Skipping...")
                 continue
+            orig_img = cv2.imread(img)
+            orig_img = cv2.cvtColor(orig_img, cv2.COLOR_BGR2RGB)
             for cls in cls_detections.class_boxes:
-                cls_masks = self._segmentor.segment_boxes(img, boxes=cls_detections.class_boxes[cls])
+                # Instead of keeping an entire mask image for the object, keep just a mask of the crop. Then use the box+mask to show
+                # Also, pass in a batch image of the objects instead of passing one by one
+                cls_masks = []
+                OBJ_SEGMENTATION_BATCH = 64
+                OBJ_STD_SIZE = (32,32)
+                for obj_idx in range(0, len(cls_detections.class_boxes[cls]), OBJ_SEGMENTATION_BATCH):
+                    # Get all the bounding boxes on the image for this batch
+                    box_batch = np.array(cls_detections.class_boxes[cls][obj_idx:(obj_idx+OBJ_SEGMENTATION_BATCH)])
+                    obj_crop = [
+                        cv2.resize(imtools.crop_box_image(orig_img, box), OBJ_STD_SIZE, interpolation=cv2.INTER_CUBIC) for box in box_batch
+                    ]
+                    # batch will be (rows x cols)
+                    rows = cols = int(np.sqrt(OBJ_SEGMENTATION_BATCH))
+                    batchh,batchw = rows*OBJ_STD_SIZE[0], cols*OBJ_STD_SIZE[1]
+                    batch_img = np.zeros(shape=(batchh, batchw, 3), dtype=np.uint8)
+                    batch_boxes = []
+                    batch_obj_grid = np.full(shape=(rows, cols), fill_value=-1, dtype=np.int32)
+                    which_obj = 0
+                    for row in range(rows):
+                        for col in range(cols):
+                            initrow, finalrow = (row*OBJ_STD_SIZE[0]), ((row+1)*OBJ_STD_SIZE[0])
+                            initcol, finalcol = (col*OBJ_STD_SIZE[1]), ((col+1)*OBJ_STD_SIZE[1])
+                            
+                            if which_obj >= len(obj_crop):
+                                break
+                            obj = deepcopy(obj_crop[which_obj])
+
+                            batch_img[initrow:finalrow, initcol:finalcol] = obj
+
+                            batch_boxes.append([initcol, initrow, finalcol, finalrow])
+                            # add the box index to the grid
+                            batch_obj_grid[row, col] = which_obj
+                            which_obj += 1
+                    batch_boxes = np.array(batch_boxes)
+
+                    batch_masks = self._segmentor.segment_boxes(batch_img, batch_boxes)
+                    mask_to_obj_idx = []
+                    obj_masks = []
+                    for mask_idx in range(len(batch_masks)):
+                        # Batch masks comes with every mask but iterating through every column instead of every row
+                        # So the mask grid is the transposed box grid
+                        mask_row = mask_idx // rows
+                        mask_col = mask_idx % cols
+
+                        h, w = batch_masks[mask_idx].shape[-2:]
+                        obj_mask = batch_masks[mask_idx].astype(np.uint8).reshape(h,w,1)
+
+                        batch_obj = batch_obj_grid[mask_row,mask_col]
+                        batch_bounding_box = batch_boxes[batch_obj]
+                        obj_mask = imtools.crop_box_image(obj_mask, batch_bounding_box)
+
+                        obj_box = box_batch[batch_obj]
+                        obj_size = (obj_box[2]-obj_box[0], obj_box[3]-obj_box[1])
+                        obj_mask = cv2.resize(obj_mask, obj_size, interpolation=cv2.INTER_CUBIC)
+                        obj_masks.append(obj_mask.reshape(obj_mask.shape[0], obj_mask.shape[1], 1))
+                        mask_to_obj_idx.append(batch_obj)
+                    cls_masks.extend([obj_masks[i] for i in mask_to_obj_idx])
+
                 self._ctx_masks[img].class_masks[cls] = cls_masks
-                self._ctx_masks[img].all_masks.extend(cls_masks.tolist())
-            self._ctx_masks[img].all_masks = np.array(self._ctx_masks[img].all_masks)
+                self._ctx_masks[img].all_masks.extend(cls_masks)
         torch.cuda.empty_cache()
 
     def task_result(self, task_name):
@@ -251,8 +324,9 @@ class DetectionAnalysisContext:
                 continue
             masked = cv2.imread(img)
             masked = cv2.cvtColor(masked, cv2.COLOR_BGR2RGB)
-            for mask in self._ctx_masks[img].all_masks:
-                masked = imtools.segment_annotated_image(masked, mask, color=[30, 6, 255], alpha=0.6)
+            for mask,box in zip(self._ctx_masks[img].all_masks, self._ctx_detections[img].all_boxes):
+                # masked = imtools.segment_annotated_image(masked, mask, color=[30, 6, 255], alpha=0.6)
+                masked = imtools.apply_image_mask(masked, binary_mask=mask, bounding_box=box)
             plt.axis("off")
             plt.imshow(masked)
             plt.show()
