@@ -64,7 +64,7 @@ class ObjectAreaOccupationTask(BaseAnalysisTask):
             image_idx = np.arange(0, len(self._ctx_imgs))
         else:
             image_idx = np.array(self._config["image_order"])
-        data = {"image_idx": np.arange(1, len(self._ctx_masks) + 1)}
+        data = {"image_idx": image_idx}
         for idx in image_idx:
             img = self._ctx_imgs[idx]
             for cls in results[img]:
