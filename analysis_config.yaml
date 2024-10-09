@@ -1,5 +1,5 @@
 model_type: "yolov8"
-model_path: "/home/juliocesar/leaf-detection/checkpoints/yolov10/large/train6/best.pt"
+model_path: "/home/juliocesar/leaf-detection/checkpoints/yolov10/large/train7/best.pt"
 # model_type: "yolonas"
 # model_path: "/home/juliocesar/leaf-detection/checkpoints/yolonas/large/train8/ckpt_best.pth"
 data_classes: ["leaf"]
@@ -7,10 +7,10 @@ sam2_path: "/home/juliocesar/leaf-detection/checkpoints/sam2/sam2_hiera_tiny.pt"
 sam2_cfg: "sam2_hiera_t.yaml"
 
 detection_parameters:
-  confidence: 55.0
+  confidence: 50.0
   overlap: 50.0
   slice_detect: True
-  slice_wh: [640,640]
+  slice_wh: [512,512]
   slice_overlap_ratio: [0.3,0.3]
   slice_iou_threshold: 0.2
   slice_fill: True
