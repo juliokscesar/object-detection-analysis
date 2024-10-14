@@ -1,16 +1,18 @@
 from typing import Union, List, Tuple
 import logging
 import numpy as np
+import pandas as pd
 import torch
 import cv2
 import os
 import matplotlib.pyplot as plt
 from pathlib import Path
 from copy import deepcopy
+import itertools
 
 from scg_detection_tools.models import BaseDetectionModel, get_opt_device, from_type
 from scg_detection_tools.detect import Detector
-from scg_detection_tools.utils.file_handling import read_yaml, file_exists
+from scg_detection_tools.utils.file_handling import read_yaml, file_exists, clear_temp_folder
 import scg_detection_tools.utils.image_tools as imtools
 
 from object_detection_analysis.ctx_data import ContextDetectionBoxData, ContextDetectionMaskData
@@ -32,6 +34,13 @@ DEFAULT_ANALYSIS_CONFIG = {
             "object_size_filter": True,
             "object_size_max_wh": (80,80),
         },
+        
+        "enable_image_preprocess": False,
+        "image_preprocess": { 
+            "apply_to_ratio": 1.0,
+            "parameters": {"contrast_ratio": 1.0,"brightness_delta": 0} ,
+        },
+
     },
 
     "use_specific_parameters": False,
@@ -90,21 +99,21 @@ class DetectionAnalysisContext:
                 all_masks=[],
                 class_masks={cls: [] for cls in self._config["data_classes"]},
             )
-        
-        self._tasks = tasks
+        self._detect = self._segment = False 
+        self._tasks = None
         self._tasks_results = None
-        if self._tasks is not None:
-            self._tasks_results = {name: None for (name,_) in tasks}
-        # decide if should run YOLO and/or SAM2 based on tasks requirements
-        self._detect = self._segment = False
         if tasks is not None:
-            for _, task in tasks:
-                if task.require_detections:
+            self._tasks = {}
+            self._tasks_results = {}
+            for name, task in tasks:
+                self._tasks[name] = task
+                self._tasks_results[name] = None
+
+                if (not self._detect) and (task.require_detections):
                     self._detect = True
-                if task.require_masks:
+                if (not self._segment) and (task.require_masks):
                     self._segment = True
-                if self._detect and self._segment:
-                    break
+
 
     @property 
     def images(self):
@@ -140,7 +149,7 @@ class DetectionAnalysisContext:
             config=self._config,
         )
 
-    def run(self):
+    def run(self, clear_temp=True):
         if self._detect:
             # run detection and free memory by deleting variables
             self._run_detections()
@@ -149,7 +158,7 @@ class DetectionAnalysisContext:
             # run segmentation and free mmemory by deleting variables
             self._run_segmentations()
             self._segment = False
-        for name, task in self._tasks:
+        for name, task in self._tasks.items():
             logging.info(f"Starting task {name}")
             task.set_ctx(
                 imgs=self._ctx_imgs,
@@ -160,13 +169,16 @@ class DetectionAnalysisContext:
             task_result = task.run()
             self._tasks_results[name] = task_result
             logging.info(f"Finished task {name}")
+        
+        if clear_temp:
+            clear_temp_folder()
 
     def _run_detections(self):
         logging.info("Started running detections with context images")
         images = self.images.copy()
         # Run any detections that uses specific parameters
-        print("STARTING DETECTIONS WITH PARAMETERS:", self._detector._det_params)
         if self._config["use_specific_parameters"]:
+            track_detected_imgs = []
             for img in self._config["image_specific_parameters"]:
                 self._detector.update_parameters(**self._config["image_specific_parameters"][img])
                 print("USING SPECIFIC PARAMETERS FOR IMAGE", img, self._detector._det_params)
@@ -177,11 +189,13 @@ class DetectionAnalysisContext:
                     cls_label = self._config["data_classes"][cls_id]
                     self._ctx_detections[img].class_boxes[cls_label].append(box)
                     self._ctx_detections[img].all_boxes.append(box)
+                track_detected_imgs.append(img)
+            for img in track_detected_imgs:
                 images.remove(img)
             # reset detection parameters
             self._detector.update_parameters(**self._config["detection_parameters"])
+
         # Run rest of detections with common parameters
-        print("RUNNING WITH COMMON PARAMETERS FOR IMAGES", images, self._detector._det_params)
         detections = self._detector(images)
         for img, detection in zip(images, detections):
             for cls_id, box in zip(detection.class_id, detection.xyxy.astype(np.int32)):
@@ -286,13 +300,62 @@ class DetectionAnalysisContext:
             return None
         return self._tasks_results[task_name]
 
-    def task_sumary(self):
-        print("-"*30, "TASK SUMARRY OF LAST ANALYSIS", "-"*30, "\n")
+    def task_summary(self):
+        print("-"*30, "TASK SUMMARY OF LAST ANALYSIS", "-"*30, "\n")
         for task in self._tasks_results:
             print(f"RESULTS OF TASK {task}")
-            for img in self._tasks_results[task]:
-                print(os.path.basename(img), self._tasks_results[task][img])
+            print(self._tasks_results[task])
             print("_"*90, "\n")
+
+    def plot_tasks(self, plot_total_results=True, plot_per_class_results=False, save_plots=False):
+        if (not plot_total_results) and (not plot_per_class_results):
+            logging.warning("'plot_tasks' called with both plot_total_results and plot_per_class_results set to False. Nothing to plot then.")
+            return
+
+        if save_plots and (not os.path.isdir("analysis_exp/plots")):
+            os.makedirs("analysis_exp/plots", exist_ok=True)
+
+        for task_name, task_results in self._tasks_results.items():
+            if (not self._tasks[task_name]._can_plot) or (not self._tasks[task_name]._config["plot"]):
+                continue
+            # make sure we're using dataframes
+            if not isinstance(task_results, pd.DataFrame):
+                logging.error(f"Expected type pd.DataFrame, but task results for task {task_name!r} is {type(task_results)}")
+                continue
+                
+            if plot_total_results:
+                fig, ax = plt.subplots(layout="tight")
+                ax.plot(task_results["img_idx"], task_results["total"], marker='o')
+                ax.set(xlabel="Image ID", ylabel=f"{task_name} total results")
+                if len(self._tasks[task_name]._config["plot_ax_kwargs"]) > 0:
+                    ax.set(**self._tasks[task_name]._config["plot_ax_kwargs"])
+                if save_plots:
+                    fig.savefig(f"analysis_exp/plots/task_{task_name}_total.png")
+
+            if plot_per_class_results:
+                fig, ax = plt.subplots(layout="tight")
+                marker_iter = itertools.cycle(['o', '*', '.', '^', 'p', '+', 'x', 'D'])
+                for cls in task_results.columns[1:]:
+                    if cls == "total":
+                        continue
+                    ax.plot(task_results["img_idx"], task_results[cls], marker=next(marker_iter), label=cls)
+                ax.set(xlabel="Image ID", ylabel=f"{task_name} per class results")
+                if len(self._tasks[task_name]._config["plot_ax_kwargs"]) > 0:
+                    ax.set(**self._tasks[task_name]._config["plot_ax_kwargs"])
+                ax.legend()
+                if save_plots:
+                    fig.savefig(f"analysis_exp/plots/task_{task_name}_per_class.png")
+
+    def export_csv_tasks(self, skip_tasks: List[str] = None):
+        if not os.path.isdir("analysis_exp"):
+            os.makedirs("analysis_exp", exist_ok=True)
+        for task_name, task_results in self._tasks_results.items():
+            if (skip_tasks is not None) and (task_name in skip_tasks):
+                continue
+            if not isinstance(task_results, pd.DataFrame):
+                logging.error(f"Expected type pd.DataFrame, but task results for task {task_name!r} is {type(task_results)}")
+                continue
+            task_results.to_csv(f"analysis_exp/{task_name}.csv", index=False)
 
     def show_detections(self, only_imgs: Union[List[int], List[str], None] = None):
         if only_imgs is None:

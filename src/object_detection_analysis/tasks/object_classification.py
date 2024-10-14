@@ -29,13 +29,15 @@ class ObjectClassificationTask(BaseAnalysisTask):
             use_boxes: bool = False,
             show_classifications=True,
             show_detections=False,
-            plot_per_image=False,
             OBJ_STD_SIZE=(32,32),
+            plot=False,
+            **plot_ax_kwargs,
         ):
         """Initialize object classification task"""
         super().__init__()
         self._require_detections = True
         self._require_masks = not use_boxes
+        self._can_plot = True
         
         if isinstance(clf, str):
             clf = classifier_from_name(clf, ckpt_path=clf_ckpt_path, to_optimal_device=True)
@@ -51,8 +53,9 @@ class ObjectClassificationTask(BaseAnalysisTask):
             "show_classifications": show_classifications,
             "use_boxes": use_boxes,
             "show_detections": show_detections, 
-            "plot_per_image": plot_per_image,
             "obj_std_size": OBJ_STD_SIZE,
+            "plot": plot,
+            "plot_ax_kwargs": plot_ax_kwargs,
         }
 
     def run(self):
@@ -122,25 +125,19 @@ class ObjectClassificationTask(BaseAnalysisTask):
             axs[1].legend(handles=color_patches)
             plt.show()
 
+        df_results = self.result_dataframe(clf_results)
         # Plot each class count per image
-        if self._config["plot_per_image"]:
-            _, ax = plt.subplots(layout="tight")
-            img_idx = np.arange(len(self._ctx_imgs))
-            cls_count = {}
-            for img in clf_results:
-                for cls in clf_results[img]:
-                    if cls == "total":
-                        continue
-                    if cls not in cls_count:
-                        cls_count[cls] = []
-                    cls_count[cls].append(clf_results[img][cls])
-            for cls in cls_count:
-                ax.plot(img_idx, cls_count[cls], marker='o', label=cls)
-            ax.legend()
-            ax.set(xlabel="Image ID", ylabel="Object count")
-            plt.show()
+        # if self._config["plot_per_image"]:
+        #     _, ax = plt.subplots(layout="tight")
+        #     for cls in df_results.columns[1:]:
+        #         if cls == "all":
+        #             continue
+        #         ax.plot(df_results["img_idx"], df_results[cls], marker='o', label=cls)
+        #     ax.legend()
+        #     ax.set(xlabel="Image ID", ylabel="Object count")
+        #     plt.show()
 
-        return clf_results
+        return df_results
 
     @staticmethod
     def extract_objects(ctx_detections: dict[str, ContextDetectionBoxData], ctx_masks: dict[str, ContextDetectionMaskData] = None, use_boxes = False, OBJ_STD_SIZE=(32,32)):
@@ -157,13 +154,6 @@ class ObjectClassificationTask(BaseAnalysisTask):
             if not use_boxes:
                 masks = ctx_masks[img].all_masks
                 for box, mask in zip(boxes, masks):
-                    # h, w = mask.shape[1:]
-                    # mask = mask.astype(np.uint8).reshape(h,w,) * 255
-                    # masked = orig_img.copy()
-                    # masked[mask[:,:] < 1] = 0
-                    # obj_crop = imtools.crop_box_image(masked, box)
-                    # obj_crop = cv2.resize(obj_crop, OBJ_STD_SIZE, cv2.INTER_CUBIC)
-
                     obj_crop = imtools.crop_box_image(orig_img, box)
                     if obj_crop.shape[:2] != mask.shape[:2]:
                         mask = cv2.resize(mask, obj_crop.shape[:2], interpolation=cv2.INTER_CUBIC)

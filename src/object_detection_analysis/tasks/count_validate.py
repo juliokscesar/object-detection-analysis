@@ -17,6 +17,7 @@ class CountValidateModelTask(BaseAnalysisTask):
         }
         self._require_detections = True
         self._require_masks = False
+        self._can_plot = False
 
     def run(self):
         if not self._load_annotations():
@@ -61,17 +62,19 @@ class CountValidateModelTask(BaseAnalysisTask):
             out=np.zeros_like(errors.astype(np.float64)),
             where=true_count != 0,
         )
+        me = errors.mean()
+        mwe = np.sum(errors * true_count)/true_count.sum()
         mae = np.abs(errors).mean()
+        mwae = np.sum(np.abs(errors) * true_count)/true_count.sum()
+        mare = np.abs(relative).mean()
         mse = (errors**2).mean()
         rmse = np.sqrt(mse)
+        rmsre = np.sqrt((relative**2).mean())
+        rrmse = np.sqrt((errors**2).mean() / (true_count**2).sum())
         stderror = np.sqrt( ((errors - errors.mean())**2.0).mean() )
-        rel_mae = np.absolute(relative).mean()
-        rel_mse = (relative**2).mean()
-        rel_rmse = np.sqrt(rel_mse)
-        rel_stderror = np.sqrt( ((relative - relative.mean())**2.0).mean() )
         return {
-            "mae": mae, "mse": mse, "rmse": rmse, "stderror": stderror,
-            "relative_mae": rel_mae, "relative_mse": rel_mse, "relative_rmse": rel_rmse, "relative_stderror": rel_stderror,
+            "me": me, "mwe": mwe, "mae": mae, "mwae": mwae, "mse": mse, "rmse": rmse, "stderror": stderror,
+            "mare": mare, "rmsre": rmsre, "rrmse": rrmse,
         }
 
     def _load_annotations(self):

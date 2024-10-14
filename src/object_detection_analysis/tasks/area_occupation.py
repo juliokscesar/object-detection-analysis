@@ -8,17 +8,17 @@ import matplotlib.pyplot as plt
 from object_detection_analysis.tasks import BaseAnalysisTask
 
 class ObjectAreaOccupationTask(BaseAnalysisTask):
-    def __init__(self, image_order: Union[List[int], None] = None,  export_csv=False, use_boxes=False, plot=True, plot_per_class=False):
+    def __init__(self, image_order: Union[List[int], None] = None,  use_boxes=False, plot=False, **plot_ax_kwargs):
         super().__init__()
         self._require_detections = True
         self._require_masks = not use_boxes
+        self._can_plot = True
 
         self._config = {
             "image_order": image_order,
             "use_boxes": use_boxes,
             "plot": plot,
-            "plot_per_class": plot_per_class,
-            "export_csv": export_csv,
+            "plot_ax_kwargs": plot_ax_kwargs,
         }
     
     def run(self):
@@ -37,11 +37,11 @@ class ObjectAreaOccupationTask(BaseAnalysisTask):
                 img_pixels = cv2.imread(img).size // 3
                 
                 # Store pixels occupied by objects
-                results[img]["all"] = self.masks_pixels(img_masks.all_masks)
+                results[img]["total"] = self.masks_pixels(img_masks.all_masks)
                 for cls in img_masks.object_classes:
                     occupied_pixels = self.masks_pixels(img_masks.class_masks[cls])
                     results[img][cls] += occupied_pixels
-                # Calculate each class density (including "all")
+                # Calculate each class density (including "total")
                 for res in results[img]:
                     results[img][res] = results[img][res] / img_pixels
         else:
@@ -49,51 +49,44 @@ class ObjectAreaOccupationTask(BaseAnalysisTask):
                 # Total image pixels
                 img_pixels = cv2.imread(img).size // 3
                 # Calculate pixels occupied by object boxes
-                results[img]["all"] = self.boxes_pixels(img_det.all_boxes)
+                results[img]["total"] = self.boxes_pixels(img_det.all_boxes)
                 for cls in img_det.object_classes:
                     results[img][cls] += self.boxes_pixels(img_det.class_boxes[cls])
-                # Calculate each class density (including "all")
+                # Calculate each class density (including "total")
                 for res in results[img]:
                     results[img][res] = results[img][res] / img_pixels
         
-        if not self._config["plot"] and not self._config["plot_per_class"] and not self._config["export_csv"]:
-            return results
+        # if not self._config["plot"] and not self._config["plot_per_class"] and not self._config["export_csv"]:
+        #     return results
         
         # Build data frame where first column is image_idx and other columns are the occupied area of each class in that image (including 'all')
         if self._config["image_order"] is None:
             image_idx = np.arange(0, len(self._ctx_imgs))
         else:
             image_idx = np.array(self._config["image_order"])
-        data = {"image_idx": image_idx}
-        for idx in image_idx:
-            img = self._ctx_imgs[idx]
-            for cls in results[img]:
-                if cls not in data:
-                    data[cls] = np.zeros(len(image_idx))
-                data[cls][idx] = results[img][cls]
-        df = pd.DataFrame(data)
-        df = df.set_index("image_idx")
+        df = self.result_dataframe(results)
+        df["img_idx"] = image_idx
 
-        if self._config["export_csv"]:
-            df.to_csv("area_occupation.csv")
+        # if self._config["export_csv"]:
+        #     df.to_csv("area_occupation.csv")
         
-        if self._config["plot"]:
-            _, ax = plt.subplots(layout="tight")
-            ax.plot(df.index.values, df["all"], marker='o')
-            ax.set(xlabel="Image index", ylabel="Area occupied by all objects")
-            plt.show()
+        # if self._config["plot"]:
+        #     _, ax = plt.subplots(layout="tight")
+        #     ax.plot(df["img_idx"], df["total"], marker='o')
+        #     ax.set(xlabel="Image index", ylabel="Area occupied by all objects")
+        #     plt.show()
         
-        if self._config["plot_per_class"]:
-            _, ax = plt.subplots(layout="tight")
-            for cls in df.columns:
-                if cls == "all":
-                    continue
-                ax.plot(df.index.values, df[cls], marker='o', label=cls)
-            ax.legend()
-            ax.set(xlabel="Image index", ylabel="Area occupied by objects of the same class")
-            plt.show()
+        # if self._config["plot_per_class"]:
+        #     _, ax = plt.subplots(layout="tight")
+        #     for cls in df.columns:
+        #         if cls == "total":
+        #             continue
+        #         ax.plot(df["img_idx"], df[cls], marker='o', label=cls)
+        #     ax.legend()
+        #     ax.set(xlabel="Image ID", ylabel="Area occupied by objects of the same class")
+        #     plt.show()
 
-        return results
+        return df
         
     @staticmethod
     def masks_pixels(binary_masks: np.ndarray):
