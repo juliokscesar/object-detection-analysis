@@ -14,18 +14,12 @@ class CNNFCClassifier(nn.Module, BaseClassifier):
         self._preprocess = preprocess
         self._device = "cpu"
 
-        self.conv = nn.Sequential(
+        self.backbone = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(32, 32, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
             
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
 
@@ -35,7 +29,7 @@ class CNNFCClassifier(nn.Module, BaseClassifier):
         )
 
         self.fc = nn.Sequential(
-            nn.Linear(128, 128),
+            nn.Linear(128 * 4 * 4, 128),
             nn.ReLU(),
             nn.Linear(128, 128),
             nn.ReLU(),
@@ -49,7 +43,7 @@ class CNNFCClassifier(nn.Module, BaseClassifier):
         super().to(device)
 
     def forward(self, X):
-        X = self.conv(X)
+        X = self.backbone(X)
         X = torch.flatten(X, 1)
         X = self.fc(X)
 
