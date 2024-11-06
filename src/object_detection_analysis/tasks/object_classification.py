@@ -126,17 +126,6 @@ class ObjectClassificationTask(BaseAnalysisTask):
             plt.show()
 
         df_results = self.result_dataframe(clf_results)
-        # Plot each class count per image
-        # if self._config["plot_per_image"]:
-        #     _, ax = plt.subplots(layout="tight")
-        #     for cls in df_results.columns[1:]:
-        #         if cls == "all":
-        #             continue
-        #         ax.plot(df_results["img_idx"], df_results[cls], marker='o', label=cls)
-        #     ax.legend()
-        #     ax.set(xlabel="Image ID", ylabel="Object count")
-        #     plt.show()
-
         return df_results
 
     @staticmethod

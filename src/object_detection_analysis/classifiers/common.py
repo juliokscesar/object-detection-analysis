@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 import torchvision.transforms as transforms
+import cv2
 
 from object_detection_analysis.classifiers import KNNClassifier, SVMClassifier, MLPClassifier, CNNFCClassifier
 
@@ -29,7 +30,7 @@ def classifier_from_name(name: str, ckpt_path: str = None, to_optimal_device=Tru
     if ckpt_path is not None:
         clf_file = ckpt_path
     clf = clf_class.from_state(clf_file)
-    if (to_optimal_device):
+    if (to_optimal_device) and (isinstance(clf, MLPClassifier) or isinstance(clf, CNNFCClassifier)):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         clf.to(device)
     return clf
@@ -49,6 +50,9 @@ def resnet_extract_features(img: np.ndarray, resnet: int = 18):
     if (g_RESNET_INSTANCES[resnet] is None) or (g_RESNET_PREPROCESS is None):
         _init_resnet(resnet)
     
+    if (img.ndim == 2) or (img.shape[-1] == 1):
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+
     proc = g_RESNET_PREPROCESS(img).unsqueeze(0)
     with torch.no_grad():
         features = g_RESNET_INSTANCES[resnet](proc)
