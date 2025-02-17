@@ -15,7 +15,7 @@ from scg_detection_tools.detect import Detector
 from scg_detection_tools.utils.file_handling import read_yaml, file_exists, clear_temp_folder
 import scg_detection_tools.utils.image_tools as imtools
 
-from object_detection_analysis.ctx_data import ContextDetectionBoxData, ContextDetectionMaskData
+from object_detection_analysis.ctx_data import ContextDetectionBoxData, ContextDetectionMaskData, ContextObjectData
 from object_detection_analysis.tasks import BaseAnalysisTask
 
 DEFAULT_ANALYSIS_CONFIG = {
@@ -88,6 +88,7 @@ class DetectionAnalysisContext:
         self._ctx_imgs = imgs
         self._ctx_detections = {}
         self._ctx_masks = {}
+        self._ctx_objdata = {}
         for img in imgs:
             self._ctx_detections[img] = ContextDetectionBoxData(
                 object_classes=self._config["data_classes"],
@@ -99,6 +100,11 @@ class DetectionAnalysisContext:
                 all_masks=[],
                 class_masks={cls: [] for cls in self._config["data_classes"]},
             )
+            self._ctx_objdata[img] = ContextObjectData(
+                data_labels={},
+                data={},
+            )
+
         self._detect = self._segment = False 
         self._tasks = None
         self._tasks_results = None
@@ -113,7 +119,6 @@ class DetectionAnalysisContext:
                     self._detect = True
                 if (not self._segment) and (task.require_masks):
                     self._segment = True
-
 
     @property 
     def images(self):
@@ -164,6 +169,7 @@ class DetectionAnalysisContext:
                 imgs=self._ctx_imgs,
                 detections=self._ctx_detections,
                 masks=self._ctx_masks,
+                objdata=self._ctx_objdata,
                 data_classes=self._config["data_classes"],
             )
             task_result = task.run()

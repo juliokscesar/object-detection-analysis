@@ -13,3 +13,8 @@ class ContextDetectionMaskData:
     object_classes: List[str]
     all_masks: np.ndarray
     class_masks: dict[str, np.ndarray]
+
+@dataclass
+class ContextObjectData:
+    data_labels: dict[str, List[str]]
+    data: dict[str, np.ndarray]
